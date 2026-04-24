@@ -1,0 +1,94 @@
+# akopia — example configuration (v1)
+#
+# Copy to ./akopia.yaml (or point $AKOPIA_CONFIG_PATH at it) and edit.
+# Validate with:  python -m scripts.akopia_cli validate
+#
+# Env interpolation:
+#   ${VAR}           required — startup fails if VAR is not set
+#   ${VAR:-default}  optional — uses `default` if VAR is not set
+#
+# See docs/plugin-contracts.md §Configuration for the full contract.
+
+version: 1
+
+core:
+  storage:
+    # Vector store (Qdrant). `collection_prefix` namespaces Akopia-created
+    # collections so you can share a Qdrant instance across projects.
+    vector:
+      url: "${QDRANT_URL:-http://qdrant:6333}"
+      collection_prefix: "akopia_"
+    # Lexical/keyword store (Meilisearch).
+    lexical:
+      url: "${MEILI_URL:-http://meilisearch:7700}"
+      master_key: "${MEILI_MASTER_KEY}"
+    # Event bus / job queue (Redis streams).
+    queue:
+      url: "${REDIS_URL:-redis://redis:6379}"
+
+  embeddings:
+    # Text embedder (required).
+    text:
+      # `fastembed` (default) runs a quantized ONNX model in-process on
+      # CPU — zero external deps, works for `docker compose up` quickstart.
+      # `ollama` talks HTTP to an external Ollama server; compute stays
+      # off the akopia pod (GPU box, NAS, another machine…).
+      provider: fastembed        # fastembed | ollama
+      model: nomic-embed-text-v1.5
+      quantized: true            # fastembed only; Q variant saves ~600 MiB RAM
+      # For ollama (uncomment the 3 lines below and set OLLAMA_URL):
+      # provider: ollama
+      # url: "${OLLAMA_URL}"     # e.g. http://host.docker.internal:11434
+      # model: nomic-embed-text  # must exist on the Ollama server
+    # Image embedder. Set `enabled: false` for text-only deployments.
+    image:
+      enabled: false
+      # provider: fastembed
+      # model: clip-vit-b-32
+
+  router:
+    max_event_depth: 3           # cycle protection on attached content
+    idempotency_ttl: 7d
+
+  auth:
+    mode: bearer-static          # MVP. Post-launch: api-keys
+    token: "${AKOPIA_BEARER_TOKEN}"
+
+# At least one source is required. Each `id` must be unique.
+sources:
+  - id: local-docs
+    type: folder
+    config:
+      path: /data/docs
+      include: ["*.md", "*.pdf"]
+      # exclude: ["drafts/**"]
+      # poll_seconds: 300
+
+  # Example git source (uncomment + set GITHUB_TOKEN to enable).
+  # The id must match the `plugin-adapter-git` command in docker-compose.yml
+  # (default: `example-git`).
+  # - id: example-git
+  #   type: git
+  #   config:
+  #     provider: github         # or: gitlab | gitea | bitbucket
+  #     org: yourorg
+  #     repo: yourrepo
+  #     token: "${GITHUB_TOKEN}"
+  #     # Max parallel clone/fetch subprocesses (1–10, default 3).
+  #     # Bump on self-hosted Gitea / GitLab where rate-limits are lax.
+  #     concurrency: 3
+
+# At least one extractor is required. `plain` is recommended as a fallback.
+extractors:
+  - type: plain
+    config: {}
+
+  # - type: office
+  #   config:
+  #     include_speaker_notes: true
+  #     max_rows_per_sheet: 10000
+
+  # - type: html
+  #   config:
+  #     engine: trafilatura
+  #     strip_nav: true

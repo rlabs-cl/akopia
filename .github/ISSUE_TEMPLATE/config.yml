@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/rlabs-cl/akopia/blob/main/SECURITY.md
+    about: Do NOT file public issues for security problems. See SECURITY.md for private disclosure.
+  - name: Question or discussion
+    url: https://github.com/rlabs-cl/akopia/discussions
+    about: For open-ended questions, design discussions, or sharing how you're using akopia, please use Discussions.

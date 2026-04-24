@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+*.whl
+dist/
+build/
+sdist/
+wheels/
+MANIFEST
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.cache
+nosetests.xml
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Runtime secrets + config
+.env
+.env.*
+!.env.example
+akopia.yaml
+!examples/akopia.yaml.example
+*.pem
+*.key
+*.crt
+!tests/fixtures/**/*.pem
+!tests/fixtures/**/*.key
+!tests/fixtures/**/*.crt
+
+# Local data
+data/
+tmp/
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker-build-cache/

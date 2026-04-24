@@ -1,0 +1,40 @@
+# VCS + CI
+.git
+.gitea
+.github
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+
+# Runtime config + secrets
+.env
+.env.*
+akopia.yaml
+
+# Docs — exclude bulk but keep root README.md + LICENSE (needed by pyproject)
+docs/
+*.md
+!README.md
+LICENSE
+!LICENSE
+CHANGELOG.md
+!CHANGELOG.md
+
+# Tests + dev
+tests
+.pytest_cache
+.ruff_cache
+.mypy_cache
+htmlcov
+.coverage
+
+# K8s (not part of lib build)
+k8s
+
+# Examples (big + not part of build)
+examples

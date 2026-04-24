@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://akopia.dev/schemas/akopia.yaml/v1.json",
+  "title": "akopia configuration",
+  "description": "Top-level schema for akopia.yaml (version 1). See docs/plugin-contracts.md §Configuration.",
+  "type": "object",
+  "required": ["version", "core", "sources", "extractors"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Must be 1 for this release."
+    },
+    "core": {
+      "type": "object",
+      "required": ["storage", "embeddings", "router", "auth"],
+      "additionalProperties": false,
+      "properties": {
+        "storage": {
+          "type": "object",
+          "required": ["vector", "lexical", "queue"],
+          "additionalProperties": false,
+          "properties": {
+            "vector": {
+              "type": "object",
+              "required": ["url"],
+              "additionalProperties": true,
+              "properties": {
+                "url": { "type": "string" },
+                "collection_prefix": { "type": "string" }
+              }
+            },
+            "lexical": {
+              "type": "object",
+              "required": ["url"],
+              "additionalProperties": true,
+              "properties": {
+                "url": { "type": "string" },
+                "master_key": { "type": "string" }
+              }
+            },
+            "queue": {
+              "type": "object",
+              "required": ["url"],
+              "additionalProperties": true,
+              "properties": {
+                "url": { "type": "string" }
+              }
+            }
+          }
+        },
+        "embeddings": {
+          "type": "object",
+          "required": ["text", "image"],
+          "additionalProperties": false,
+          "properties": {
+            "text": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "provider": { "type": "string" },
+                "model": { "type": "string" },
+                "quantized": { "type": "boolean" }
+              }
+            },
+            "image": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "provider": { "type": "string" },
+                "model": { "type": "string" }
+              }
+            }
+          }
+        },
+        "router": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_event_depth": { "type": "integer", "minimum": 0 },
+            "idempotency_ttl": { "type": "string" }
+          }
+        },
+        "chunker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": ["recursive", "paragraph"],
+              "description": "Chunking strategy (recursive=default, paragraph=legacy)."
+            },
+            "chunk_size_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Max tokens per emitted chunk."
+            },
+            "overlap_tokens": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Tokens of previous chunk prepended to each subsequent chunk."
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": true,
+          "properties": {
+            "mode": { "type": "string" },
+            "token": { "type": "string" }
+          }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "description": "At least one source adapter must be configured.",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "config"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1 },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "extractors": {
+      "type": "array",
+      "minItems": 1,
+      "description": "At least one extractor must be configured. Typically one instance per type.",
+      "items": {
+        "type": "object",
+        "required": ["type", "config"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+FROM python:3.11-slim AS base
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY common/ common/
+COPY mcp_server/ mcp_server/
+COPY README.md ./
+
+RUN pip install --no-cache-dir ".[mcp]"
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8082
+CMD ["uvicorn", "mcp_server.main:starlette_app", "--host", "0.0.0.0", "--port", "8082", "--workers", "1", "--log-level", "info"]

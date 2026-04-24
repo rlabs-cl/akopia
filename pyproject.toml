@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "akopia"
+version = "0.1.0"
+description = "Plug. Sync. Serve. — headless retrieval plane for your AI stack."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Ramón Labbé", email = "ramonlabbe@gmail.com" },
+]
+keywords = ["rag", "vector-search", "knowledge-base", "embeddings", "semantic-search", "mcp"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Text Processing :: Indexing",
+]
+
+dependencies = [
+  # Core runtime (required regardless of which plugins are enabled)
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "redis>=5.0",
+  "httpx>=0.26",
+    "tiktoken>=0.7,<1.0",
+  "pyyaml>=6.0",
+  "jsonschema>=4.20",
+]
+
+[project.optional-dependencies]
+# Source adapters — install only the ones you need.
+git    = []  # stdlib + subprocess is enough
+folder = []  # stdlib only
+web    = ["selectolax>=0.3"]
+
+# Content extractors — same principle.
+plain  = []  # passthrough
+office = ["python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=0.6"]
+pdf    = ["pypdfium2>=4.25"]
+html   = ["trafilatura>=1.12"]
+
+# Embeddings backends.
+fastembed = ["fastembed>=0.3"]
+
+# MCP server (lets agents query Akopia over the Model Context Protocol).
+mcp = ["mcp>=1.0.0", "starlette>=0.27", "sse-starlette>=1.6"]
+
+# Meta bundles for common profiles.
+minimal   = ["akopia[plain,folder,fastembed]"]
+all-text  = ["akopia[plain,folder,office,pdf,html,web,fastembed]"]
+
+# Development.
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "respx>=0.22",
+  "reportlab>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rlabs-cl/akopia"
+Repository = "https://github.com/rlabs-cl/akopia"
+Documentation = "https://github.com/rlabs-cl/akopia/tree/main/docs"
+Issues = "https://github.com/rlabs-cl/akopia/issues"
+
+[project.scripts]
+akopia = "scripts.akopia_cli:main"
+
+# ─────────────────────────────────────────────────────────────────
+# Plugin registration via Python entry points.
+#
+# Third-party plugins can publish their own package with its own
+# [project.entry-points] block targeting these same groups. The
+# PluginRegistry (common/registry.py) discovers them at runtime
+# via importlib.metadata — no changes to akopia core required.
+# ─────────────────────────────────────────────────────────────────
+
+[project.entry-points."akopia.source_adapter"]
+git        = "adapters.git:GitAdapter"
+folder     = "adapters.folder:FolderAdapter"
+web-single = "adapters.web_single:WebSingleAdapter"
+web-deep   = "adapters.web_deep:WebDeepAdapter"
+
+[project.entry-points."akopia.content_extractor"]
+plain    = "extractors.plain:PlainExtractor"
+office   = "extractors.office:OfficeExtractor"
+pdf-text = "extractors.pdf_text:PdfTextExtractor"
+html     = "extractors.html:HTMLExtractor"
+
+[tool.setuptools.packages.find]
+include = ["common*", "concentrador*", "embeddings*", "mcp_server*", "adapters*", "extractors*", "scripts*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+common = ["akopia_schema.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"

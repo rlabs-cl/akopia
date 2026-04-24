@@ -1,0 +1,30 @@
+FROM python:3.11-slim AS base
+
+# `git` is needed by the git adapter at runtime (shells out to `git clone/fetch`).
+# Kept in the base image so a single Dockerfile.plugin covers every adapter/extractor.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY common/ common/
+COPY adapters/ adapters/
+COPY extractors/ extractors/
+COPY concentrador/ concentrador/
+COPY scripts/ scripts/
+COPY README.md ./
+
+# Install akopia with the default "all-text" bundle so every
+# in-tree adapter + extractor is importable. Slim builds that only
+# need a subset can override with --build-arg EXTRAS="plain,folder".
+ARG EXTRAS=all-text
+RUN pip install --no-cache-dir ".[${EXTRAS}]"
+
+ENV PYTHONUNBUFFERED=1
+
+# Entry point is the generic plugin runner. Compose/k8s override `command`
+# with the specific plugin to run, e.g. `akopia run adapter local-docs`.
+ENTRYPOINT ["akopia"]
+CMD ["--help"]

@@ -1,0 +1,78 @@
+name: Bug report
+description: Something isn't working — report a reproducible problem.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A minimal,
+        reproducible example makes it much faster to diagnose.
+
+        For security issues, do NOT file here — see
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit SHA
+      description: Output of `git rev-parse --short HEAD` or release tag.
+      placeholder: "e.g. 50dad07 or v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: How is akopia running?
+      options:
+        - Docker Compose (recommended path)
+        - Local Python (pip install -e .)
+        - Kubernetes
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Exact commands / config that trigger the bug.
+      placeholder: |
+        1. cp .env.example .env
+        2. docker compose up --build
+        3. curl -X POST http://localhost:8080/v1/search/lexical ...
+        4. Observed: ...
+      render: bash
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Run `docker compose logs <service> --tail 200` for the affected
+        service. Redact any bearer tokens or secrets.
+      render: text
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, akopia.yaml snippet, workarounds you tried, etc.

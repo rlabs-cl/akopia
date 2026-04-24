@@ -1,0 +1,198 @@
+# Application deployments for akopia
+# Image tags are updated by CI/CD pipeline
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: concentrador
+  namespace: akopia
+  labels:
+    app: concentrador
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: concentrador
+  template:
+    metadata:
+      labels:
+        app: concentrador
+    spec:
+      containers:
+        - name: concentrador
+          image: 192.168.2.172:30500/kb/concentrador:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: akopia-config
+            - secretRef:
+                name: akopia-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adapter-git
+  namespace: akopia
+  labels:
+    app: adapter-git
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adapter-git
+  template:
+    metadata:
+      labels:
+        app: adapter-git
+    spec:
+      containers:
+        - name: adapter-git
+          image: 192.168.2.172:30500/kb/adapter-git:latest
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: akopia-config
+            - secretRef:
+                name: akopia-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: repos-data
+              mountPath: /data/repos
+            - name: cache-data
+              mountPath: /data/cache
+      volumes:
+        - name: repos-data
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: cache-data
+          emptyDir:
+            sizeLimit: 500Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: embeddings
+  namespace: akopia
+  labels:
+    app: embeddings
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: embeddings
+  template:
+    metadata:
+      labels:
+        app: embeddings
+    spec:
+      containers:
+        - name: embeddings
+          image: 192.168.2.172:30500/kb/embeddings:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: akopia-config
+            - secretRef:
+                name: akopia-secrets
+          resources:
+            # nomic-embed-text (~500 MiB) + CLIP ViT-B/32 (~400 MiB) loaded
+            # at runtime + tokenizer + FastAPI + Redis client ≈ 2.5 GiB
+            # resident once warm. Batch inference spikes can add another
+            # 500 MiB-1 GiB of transient activations. 4 GiB limit OOM-killed
+            # the pod ~1×/45 min (71 restarts over 2d6h observed 2026-04-22).
+            # 8 GiB gives comfortable headroom for bursts.
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "8Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-server
+  namespace: akopia
+  labels:
+    app: mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-server
+  template:
+    metadata:
+      labels:
+        app: mcp-server
+    spec:
+      containers:
+        - name: mcp-server
+          image: 192.168.2.172:30500/kb/mcp-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: akopia-config
+            - secretRef:
+                name: akopia-secrets
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10

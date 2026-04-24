@@ -1,0 +1,37 @@
+# Application services for akopia
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: concentrador
+  namespace: akopia
+spec:
+  selector:
+    app: concentrador
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: embeddings
+  namespace: akopia
+spec:
+  selector:
+    app: embeddings
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-server
+  namespace: akopia
+spec:
+  selector:
+    app: mcp-server
+  ports:
+    - port: 8082
+      targetPort: 8082

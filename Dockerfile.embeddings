@@ -1,0 +1,13 @@
+FROM python:3.11-slim AS base
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY common/ common/
+COPY embeddings/ embeddings/
+COPY README.md ./
+
+RUN pip install --no-cache-dir ".[fastembed]"
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8081
+CMD ["uvicorn", "embeddings.main:app", "--host", "0.0.0.0", "--port", "8081", "--workers", "1", "--log-level", "info"]

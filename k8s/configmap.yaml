@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: akopia-config
+  namespace: akopia
+data:
+  REDIS_URL: "redis://redis.akopia.svc.cluster.local:6379"
+  QDRANT_URL: "http://qdrant.akopia.svc.cluster.local:6333"
+  MEILISEARCH_URL: "http://meilisearch.akopia.svc.cluster.local:7700"
+  # Set GITEA_URL only if you use the gitea provider; point at your instance.
+  GITEA_URL: ""
+  GIT_REPOS_PATH: "/data/repos"
+  NAS_MOUNT_PATH: "/mnt/nas"
+  PREPROCESS_CACHE_PATH: "/data/cache"
+  TEXT_BATCH_SIZE: "32"
+  IMAGE_BATCH_SIZE: "16"
+  MAX_CHUNK_LENGTH: "8192"

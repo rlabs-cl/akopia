@@ -1,0 +1,230 @@
+# Akopia — Build + Deploy to k3s staging
+# Triggers on push to main. Builds all changed services,
+# pushes to local registry, and rolls out to akopia namespace.
+name: Deploy Akopia (staging)
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-kb-staging-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ${{ secrets.REGISTRY_URL }}
+  NAMESPACE: akopia
+
+jobs:
+  detect-changes:
+    name: Detect changed services
+    runs-on: self-hosted
+    outputs:
+      concentrador: ${{ steps.filter.outputs.concentrador }}
+      adapter-git: ${{ steps.filter.outputs.adapter-git }}
+      embeddings: ${{ steps.filter.outputs.embeddings }}
+      mcp-server: ${{ steps.filter.outputs.mcp-server }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: filter
+        run: |
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          else
+            CHANGED="force-all"
+          fi
+
+          check_path() { echo "$CHANGED" | grep -qE "$1" && echo "true" || echo "false"; }
+
+          COMMON=$(check_path "^common/|^requirements.txt")
+          CONC=$(check_path "^concentrador/|^Dockerfile.concentrador")
+          AGIT=$(check_path "^adapter_git/|^Dockerfile.adapter-git")
+          EMBD=$(check_path "^embeddings/|^Dockerfile.embeddings")
+          MCP=$(check_path "^mcp_server/|^Dockerfile.mcp-server")
+
+          # If common code, requirements, k8s manifests, or workflow changed → rebuild all
+          if [ "$COMMON" = "true" ] \
+            || echo "$CHANGED" | grep -qE "^k8s/|^\.gitea/workflows/" \
+            || [ "$CHANGED" = "force-all" ]; then
+            CONC=true; AGIT=true; EMBD=true; MCP=true
+          fi
+
+          echo "concentrador=$CONC"  >> $GITHUB_OUTPUT
+          echo "adapter-git=$AGIT"   >> $GITHUB_OUTPUT
+          echo "embeddings=$EMBD"    >> $GITHUB_OUTPUT
+          echo "mcp-server=$MCP"     >> $GITHUB_OUTPUT
+
+          echo "--- Changes: concentrador=$CONC adapter-git=$AGIT embeddings=$EMBD mcp-server=$MCP ---"
+
+  build-concentrador:
+    name: Build concentrador
+    runs-on: self-hosted
+    needs: detect-changes
+    if: needs.detect-changes.outputs.concentrador != 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & Push
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/kb/concentrador:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/kb/concentrador:latest \
+            -f Dockerfile.concentrador .
+          docker push ${{ env.REGISTRY }}/kb/concentrador:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/kb/concentrador:latest
+
+  build-adapter-git:
+    name: Build adapter-git
+    runs-on: self-hosted
+    needs: detect-changes
+    if: needs.detect-changes.outputs.adapter-git != 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & Push
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/kb/adapter-git:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/kb/adapter-git:latest \
+            -f Dockerfile.adapter-git .
+          docker push ${{ env.REGISTRY }}/kb/adapter-git:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/kb/adapter-git:latest
+
+  build-embeddings:
+    name: Build embeddings
+    runs-on: self-hosted
+    needs: detect-changes
+    if: needs.detect-changes.outputs.embeddings != 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & Push
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/kb/embeddings:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/kb/embeddings:latest \
+            -f Dockerfile.embeddings .
+          docker push ${{ env.REGISTRY }}/kb/embeddings:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/kb/embeddings:latest
+
+  build-mcp-server:
+    name: Build mcp-server
+    runs-on: self-hosted
+    needs: detect-changes
+    if: needs.detect-changes.outputs.mcp-server != 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build & Push
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/kb/mcp-server:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/kb/mcp-server:latest \
+            -f Dockerfile.mcp-server .
+          docker push ${{ env.REGISTRY }}/kb/mcp-server:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/kb/mcp-server:latest
+
+  deploy:
+    name: Deploy to k3s
+    runs-on: self-hosted
+    needs:
+      - detect-changes
+      - build-concentrador
+      - build-adapter-git
+      - build-embeddings
+      - build-mcp-server
+    if: always() && !contains(needs.*.result, 'failure')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        run: |
+          if ! command -v kubectl &>/dev/null; then
+            curl -sLo /usr/local/bin/kubectl \
+              "https://dl.k8s.io/release/v1.33.6/bin/linux/amd64/kubectl"
+            chmod +x /usr/local/bin/kubectl
+          fi
+          SA=/var/run/secrets/kubernetes.io/serviceaccount
+          if [ -f "${SA}/token" ]; then
+            kubectl config set-cluster default \
+              --server=https://kubernetes.default.svc \
+              --certificate-authority=${SA}/ca.crt \
+              --embed-certs=true
+            kubectl config set-credentials ci --token="$(cat ${SA}/token)"
+            kubectl config set-context ci --cluster=default --user=ci
+            kubectl config use-context ci
+          fi
+          echo "kubectl configured — $(kubectl get ns ${{ env.NAMESPACE }} --no-headers 2>/dev/null | wc -l) namespace(s)"
+
+      - name: Recover secrets from cluster
+        run: |
+          # If secret already exists in cluster, skip. Otherwise apply template.
+          kubectl get secret akopia-secrets -n ${{ env.NAMESPACE }} >/dev/null 2>&1 || \
+            kubectl apply -f k8s/secret.yaml
+
+      - name: Apply K8s manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/rbac.yaml
+          kubectl apply -f k8s/backing-services.yaml
+          kubectl apply -f k8s/services.yaml
+          kubectl apply -f k8s/deployments.yaml
+
+      - name: Update image tags
+        run: |
+          SHA=${{ github.sha }}
+          NS=${{ env.NAMESPACE }}
+          REG=${{ env.REGISTRY }}
+
+          update_if_built() {
+            local svc="$1" result="$2"
+            if [ "$result" = "success" ]; then
+              kubectl -n $NS set image "deployment/$svc" "$svc=$REG/kb/$svc:$SHA"
+              echo "Updated $svc to $SHA"
+            else
+              echo "Skipped $svc (build was $result)"
+            fi
+          }
+
+          update_if_built concentrador "${{ needs.build-concentrador.result }}"
+          update_if_built adapter-git "${{ needs.build-adapter-git.result }}"
+          update_if_built embeddings "${{ needs.build-embeddings.result }}"
+          update_if_built mcp-server "${{ needs.build-mcp-server.result }}"
+
+      - name: Wait for rollouts
+        run: |
+          NS=${{ env.NAMESPACE }}
+          for DEP in concentrador adapter-git embeddings mcp-server; do
+            echo "Waiting for $DEP..."
+            kubectl rollout status deployment/$DEP -n $NS --timeout=180s \
+              && echo "OK: $DEP" \
+              || { echo "TIMEOUT: $DEP"; kubectl -n $NS logs deployment/$DEP --tail=20; exit 1; }
+          done
+
+  smoke-test:
+    name: Smoke test
+    runs-on: self-hosted
+    needs: deploy
+    steps:
+      - name: Health checks
+        run: |
+          NS=${{ env.NAMESPACE }}
+          FAIL=0
+
+          check() {
+            CODE=$(curl -sf -o /dev/null -w "%{http_code}" "$1" 2>/dev/null || echo "000")
+            if [ "$CODE" = "200" ]; then echo "OK: $1"; else echo "FAIL ($CODE): $1"; FAIL=$((FAIL+1)); fi
+          }
+
+          check "http://concentrador.$NS.svc.cluster.local:8080/health"
+          check "http://embeddings.$NS.svc.cluster.local:8081/health"
+          check "http://mcp-server.$NS.svc.cluster.local:8082/health"
+
+          # Verify concentrador can reach backing services
+          STATUS=$(curl -sf "http://concentrador.$NS.svc.cluster.local:8080/v1/status" 2>/dev/null)
+          echo "Concentrador status: $STATUS"
+          echo "$STATUS" | grep -q '"healthy"' || { echo "FAIL: concentrador not healthy"; FAIL=$((FAIL+1)); }
+
+          [ $FAIL -eq 0 ] || { echo "Smoke test failed ($FAIL failures)"; exit 1; }
+          echo "All health checks passed!"

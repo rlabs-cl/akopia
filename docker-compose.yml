@@ -1,0 +1,234 @@
+# akopia — tier-1 "docker compose up" deployment.
+#
+#   docker compose up --build -d
+#
+# Brings up: Redis + Qdrant + Meilisearch + concentrador (router/DLQ) +
+# embeddings (text, fastembed) + MCP server + one extractor (plain) +
+# one adapter (folder, watching ./data/docs on the host).
+#
+# To add more plugins: copy one of the `plugin-*` services and change
+# the `command:` to `akopia run adapter <ID>` or `akopia run extractor <TYPE>`,
+# where <ID>/<TYPE> matches an entry in ./akopia.yaml.
+#
+# Configuration:
+#   cp examples/akopia.yaml.example akopia.yaml
+#   # edit akopia.yaml (point sources at your data)
+#   cp .env.example .env        (or set env vars directly)
+#
+# See docs/architecture.md for the component map.
+
+name: akopia
+
+x-akopia-env: &akopia-env
+  REDIS_URL: redis://redis:6379
+  QDRANT_URL: http://qdrant:6333
+  MEILISEARCH_URL: http://meilisearch:7700
+  MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-changeme-dev-only}
+  AKOPIA_BEARER_TOKEN: ${AKOPIA_BEARER_TOKEN:-changeme-dev-only}
+  # Set to "1" in production to make MCP server fail-closed when no
+  # bearer token is configured. Unset in local dev for permissive mode.
+  AKOPIA_STRICT_AUTH: ${AKOPIA_STRICT_AUTH:-}
+  # External embedder (optional). When set, the embeddings service talks
+  # HTTP to the Ollama instance at this URL instead of running fastembed
+  # locally. akopia.yaml `core.embeddings.text.provider: ollama` also picks
+  # this up. Use http://host.docker.internal:11434 to reach the host.
+  OLLAMA_URL: ${OLLAMA_URL:-}
+  # Tokens for source adapters that authenticate. Pass-through from .env
+  # so every plugin can validate the full akopia.yaml without failing on a
+  # source it doesn't own.
+  GITEA_TOKEN: ${GITEA_TOKEN:-}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+  # Route change-events through the plugin extractor path (Slice 5).
+  # Leave unset to fall back to the legacy in-process pipeline.
+  AKOPIA_ROUTER_USE_EXTRACTORS: "1"
+  AKOPIA_CONFIG_PATH: /app/akopia.yaml
+
+services:
+  # ── Backing services ──────────────────────────────────────────
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    volumes:
+      - qdrant-data:/qdrant/storage
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.11
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-changeme-dev-only}
+      MEILI_ENV: development
+    volumes:
+      - meili-data:/meili_data
+    ports:
+      - "${MEILI_PORT:-7700}:7700"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7700/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Core services ─────────────────────────────────────────────
+
+  concentrador:
+    build:
+      context: .
+      dockerfile: Dockerfile.concentrador
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+    volumes:
+      - ./akopia.yaml:/app/akopia.yaml:ro
+    ports:
+      - "${CONCENTRADOR_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  embeddings:
+    build:
+      context: .
+      dockerfile: Dockerfile.embeddings
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+    volumes:
+      - ./akopia.yaml:/app/akopia.yaml:ro
+      # Image-embedding ingestion reads bytes straight off disk via
+      # fastembed.ImageEmbedding.embed(paths). The adapter stamps the
+      # event with an absolute path pointing inside one of these two
+      # volumes; the embedder must see the same path.
+      #   - git adapter clones here
+      #   - folder adapter scans here (matches the other services)
+      # Read-only is sufficient — the embedder never writes back.
+      - git-repos:/tmp/akopia-repos:ro
+      - ./data/docs:/data/docs:ro
+    # Lets OLLAMA_URL=http://host.docker.internal:11434 reach the host
+    # on Linux (where host.docker.internal is not auto-created).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${EMBEDDINGS_PORT:-8081}:8081"
+    # Memory budget: see k8s/deployments.yaml for the rationale (OOM
+    # observed at 4 GiB with nomic + CLIP loaded; 8 GiB gives headroom).
+    mem_limit: 8g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-server
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+    ports:
+      - "${MCP_PORT:-8082}:8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── Plugins ───────────────────────────────────────────────────
+  # One container per plugin instance. Duplicate + retarget `command`
+  # to add more (e.g. a second folder adapter, an office extractor).
+
+  plugin-extractor-plain:
+    build:
+      context: .
+      dockerfile: Dockerfile.plugin
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+    volumes:
+      - ./akopia.yaml:/app/akopia.yaml:ro
+      - ./data/docs:/data/docs:ro
+      # Git adapter clones repos here. Share read-only so extractors can
+      # read the same paths the adapter wrote.
+      - git-repos:/tmp/akopia-repos:ro
+    command: ["run", "extractor", "plain"]
+
+  plugin-adapter-folder:
+    build:
+      context: .
+      dockerfile: Dockerfile.plugin
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+    volumes:
+      - ./akopia.yaml:/app/akopia.yaml:ro
+      - ./data/docs:/data/docs:ro
+    command: ["run", "adapter", "local-docs"]
+
+  plugin-adapter-git:
+    build:
+      context: .
+      dockerfile: Dockerfile.plugin
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *akopia-env
+      GITEA_TOKEN: "${GITEA_TOKEN:-}"
+    volumes:
+      - ./akopia.yaml:/app/akopia.yaml:ro
+      - git-repos:/tmp/akopia-repos
+    command: ["run", "adapter", "example-git"]
+
+volumes:
+  git-repos:
+  redis-data:
+  qdrant-data:
+  meili-data:

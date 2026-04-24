@@ -1,0 +1,31 @@
+# ServiceAccount for CI/CD runner to deploy akopia
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: akopia-deployer
+  namespace: akopia
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: akopia-deploy-role
+  namespace: akopia
+rules:
+  - apiGroups: ["", "apps", "batch"]
+    resources: ["deployments", "services", "configmaps", "secrets", "pods", "pods/log", "events", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: akopia-deploy-binding
+  namespace: akopia
+subjects:
+  - kind: ServiceAccount
+    name: akopia-deployer
+    namespace: akopia
+roleRef:
+  kind: Role
+  name: akopia-deploy-role
+  apiGroup: rbac.authorization.k8s.io

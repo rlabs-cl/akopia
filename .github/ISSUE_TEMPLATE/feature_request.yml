@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. The clearer the
+        motivation, the easier it is to evaluate the idea.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: |
+        Describe the use case or pain point. "I want X" is weaker
+        than "When I try to do X, Y gets in the way because Z".
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Be as concrete as you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else did you try or think about? Why didn't it work?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which layer would this touch?
+      options:
+        - Source adapter (ingestion)
+        - Content extractor
+        - Chunker
+        - Embedder backend
+        - Router / event bus
+        - MCP server / search API
+        - Config / akopia.yaml
+        - Docs / DX
+        - Other
+      multiple: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Links, prior art, related projects, etc.
