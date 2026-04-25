@@ -291,8 +291,17 @@ class ContentExtractor(Protocol):
 `BaseExtractor` in `common/base_extractor.py`. Handles:
 
 - Redis `extract-jobs` consumption, `extract-results` publishing
-- Fetching `content_ref` when `kind=path` or `kind=url` (inlines if
-  small, streams to temp file otherwise)
+- Fetching `content_ref` for all five `kind` values: `path`, `url`,
+  `inline_bytes`, `inline_text`, and `object_storage` (S3 / S3-compatible
+  stores like MinIO, Ceph RGW, Wasabi). The `object_storage` path is
+  enabled when the optional `[s3]` extra is installed (`pip install
+  akopia[s3]`) and the `AKOPIA_S3_ENDPOINT`, `AKOPIA_S3_ACCESS_KEY`,
+  `AKOPIA_S3_SECRET_KEY` (and optionally `AKOPIA_S3_REGION`,
+  `AKOPIA_S3_USE_SSL`) env vars are set on the extractor pod.
+  Credentials are env-resolved on purpose — `ContentRef`s travel
+  through Redis, so embedding secrets in them would leak across the
+  audit trail. Multi-bucket setups can run separate extractor pods
+  with different env values.
 - Timeout enforcement (extractors that take >N seconds fail-fast)
 - Caching (sha256(content) → extracted text) via `preprocess-cache` PVC
 - DLQ publishing on failure with original job preserved
