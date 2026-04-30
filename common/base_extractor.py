@@ -194,8 +194,44 @@ class BaseExtractor(ABC):
                 r.raise_for_status()
                 return r.content
         if ref.kind == "object_storage":
-            # TODO: S3/MinIO via boto3. Not in slice 1.
-            raise NotImplementedError("object_storage fetch not yet supported")
+            # Resolve creds from env vars rather than embedding them in
+            # the ContentRef (which travels through Redis and would leak
+            # secrets across the audit trail). All extractor pods that
+            # need to read S3-emitted events get the same credentials
+            # via deployment env. Multi-bucket setups can run separate
+            # extractor pods with different env values.
+            import os
+            try:
+                import aioboto3
+            except ImportError as exc:
+                raise NotImplementedError(
+                    "object_storage fetch requires the [s3] extra "
+                    "(aioboto3). Install with `pip install akopia[s3]`."
+                ) from exc
+            endpoint = os.environ.get("AKOPIA_S3_ENDPOINT") or ""
+            access_key = os.environ.get("AKOPIA_S3_ACCESS_KEY") or ""
+            secret_key = os.environ.get("AKOPIA_S3_SECRET_KEY") or ""
+            region = os.environ.get("AKOPIA_S3_REGION") or "us-east-1"
+            use_ssl = (
+                os.environ.get("AKOPIA_S3_USE_SSL", "false").lower()
+                in ("1", "true", "yes")
+            )
+            if not (endpoint and access_key and secret_key):
+                raise RuntimeError(
+                    "object_storage fetch needs AKOPIA_S3_ENDPOINT, "
+                    "AKOPIA_S3_ACCESS_KEY and AKOPIA_S3_SECRET_KEY "
+                    "in the extractor pod's environment."
+                )
+            session = aioboto3.Session(
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region,
+            )
+            async with session.client(
+                "s3", endpoint_url=endpoint, use_ssl=use_ssl, verify=use_ssl
+            ) as s3:
+                resp = await s3.get_object(Bucket=ref.bucket, Key=ref.key)
+                return await resp["Body"].read()
         raise ValueError(f"unknown ContentRef kind: {ref.kind}")
 
     async def _fetch_as_text(self, ref: ContentRef, encoding: str = "utf-8") -> str:
