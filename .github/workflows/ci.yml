@@ -27,7 +27,7 @@ jobs:
       - name: Install package with test extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e '.[all-text,mcp]' pytest pytest-asyncio pytest-timeout httpx respx reportlab
+          pip install -e '.[all-text,mcp,s3]' pytest pytest-asyncio pytest-timeout httpx respx reportlab 'moto[s3,server]>=5.0' fakeredis
 
       - name: Run pytest
         run: pytest tests/ -x --tb=short
