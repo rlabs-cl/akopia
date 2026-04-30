@@ -1,0 +1,21 @@
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY common/ common/
+COPY adapters/ adapters/
+COPY scripts/ scripts/
+COPY README.md ./
+
+# Install with [s3,web] so the adapter package's eager imports in
+# `adapters/__init__.py` (which loads every sibling adapter) resolve at
+# runtime. Folder/git have no extra deps; web pulls selectolax; s3
+# pulls aioboto3 (the actual reason this image exists). Adding [web]
+# is cheap and keeps the import graph identical to the plugin image.
+RUN pip install --no-cache-dir ".[s3,web]"
+
+ENV PYTHONUNBUFFERED=1
+
+# Long-lived polling loop — no HTTP port exposed.
+CMD ["python", "-m", "scripts.run_adapter_s3"]
