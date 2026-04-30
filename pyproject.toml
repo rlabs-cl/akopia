@@ -38,6 +38,7 @@ dependencies = [
 git    = []  # stdlib + subprocess is enough
 folder = []  # stdlib only
 web    = ["selectolax>=0.3"]
+s3     = ["aioboto3>=13.0,<14"]
 
 # Content extractors — same principle.
 plain  = []  # passthrough
@@ -61,6 +62,8 @@ dev = [
   "pytest-asyncio>=0.23",
   "respx>=0.22",
   "reportlab>=4.0",
+  "moto[s3,server]>=5.0",
+  "aioboto3>=13.0,<14",
 ]
 
 [project.urls]
@@ -84,6 +87,7 @@ akopia = "scripts.akopia_cli:main"
 [project.entry-points."akopia.source_adapter"]
 git        = "adapters.git:GitAdapter"
 folder     = "adapters.folder:FolderAdapter"
+s3         = "adapters.s3:S3Adapter"
 web-single = "adapters.web_single:WebSingleAdapter"
 web-deep   = "adapters.web_deep:WebDeepAdapter"
 

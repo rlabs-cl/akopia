@@ -395,7 +395,10 @@ class TestGitAdapterWatch:
         adapter = GitAdapter(instance_id="demo", redis_client=redis)
 
         async def _stopper():
-            await asyncio.sleep(0.3)
+            # Give the watch loop time to do its first clone+publish pass.
+            # 0.3 s is enough on a fast laptop but races on slow CI
+            # runners (the clone + first poll can take ~1 s under load).
+            await asyncio.sleep(2.0)
             adapter._shutdown.set()
         stopper = asyncio.create_task(_stopper())
         await adapter.start({
