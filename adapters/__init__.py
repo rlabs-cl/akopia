@@ -30,14 +30,25 @@ from __future__ import annotations
 
 from adapters.folder import FolderAdapter
 from adapters.git import GitAdapter
-from adapters.s3 import S3Adapter
 from adapters.web_deep import WebDeepAdapter
 from adapters.web_single import WebSingleAdapter
+
+# S3Adapter requires the optional `aioboto3` extra (`pip install
+# akopia[s3]`). Import lazily so installs without the extra still
+# import `adapters` cleanly. ``S3Adapter`` is exported only when the
+# dep is present; consumers can detect it via `hasattr(adapters,
+# 'S3Adapter')` or by checking ``__all__``.
+try:
+    from adapters.s3 import S3Adapter  # noqa: F401
+    _S3_ADAPTER_AVAILABLE = True
+except ImportError:
+    _S3_ADAPTER_AVAILABLE = False
 
 __all__ = [
     "FolderAdapter",
     "GitAdapter",
-    "S3Adapter",
     "WebDeepAdapter",
     "WebSingleAdapter",
 ]
+if _S3_ADAPTER_AVAILABLE:
+    __all__.append("S3Adapter")
