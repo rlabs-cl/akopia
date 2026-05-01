@@ -5,7 +5,7 @@ import hashlib
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -563,6 +563,85 @@ class IndexManager:
             logger.error("Meilisearch delete_by_source failed for %s: %s", source_id, e)
 
         return counts
+
+    # --- Stats (operator dashboards / Atalaya admin UI) -------------
+
+    async def stats(self) -> dict[str, Any]:
+        """Return operator-facing index stats.
+
+        Composition:
+        * `docs.qdrant.<collection>` — Qdrant point counts per
+          collection (vector docs, exact count via points/count).
+        * `docs.meili` — Meilisearch document count.
+        * `docs.total` — sum across the two stores.
+        * `last_index_at` — most recent ``content_modified_at`` we've
+          seen indexed (best-effort; ``None`` when no docs).
+        * `errors` — list of stores that failed the probe (so the
+          caller can degrade gracefully without seeing a 500).
+
+        Designed to be cheap (no full scans). Each Qdrant call is
+        ``points/count`` with no filter; Meili is ``search`` with
+        ``limit:0`` which returns ``estimatedTotalHits`` without
+        scanning the index.
+        """
+        out: dict[str, Any] = {
+            "docs": {"qdrant": {}, "meili": 0, "total": 0},
+            "last_index_at": None,
+            "errors": [],
+        }
+        total = 0
+        for collection in (
+            Config.QDRANT_TEXT_COLLECTION,
+            Config.QDRANT_IMAGE_COLLECTION,
+        ):
+            try:
+                resp = await self._http.post(
+                    f"{self.qdrant_url}/collections/{collection}/points/count",
+                    json={"exact": True},
+                    headers=self.qdrant_headers,
+                    timeout=5,
+                )
+                count = int(resp.json().get("result", {}).get("count", 0))
+                out["docs"]["qdrant"][collection] = count
+                total += count
+            except Exception as exc:  # noqa: BLE001
+                out["errors"].append(f"qdrant:{collection}:{exc}")
+                out["docs"]["qdrant"][collection] = None
+        try:
+            resp = await self._http.post(
+                f"{self.meili_url}/indexes/{Config.MEILI_INDEX}/search",
+                json={"limit": 0},
+                headers=self.meili_headers,
+                timeout=5,
+            )
+            meili_n = int(resp.json().get("estimatedTotalHits", 0))
+            out["docs"]["meili"] = meili_n
+            total += meili_n
+        except Exception as exc:  # noqa: BLE001
+            out["errors"].append(f"meili:{exc}")
+            out["docs"]["meili"] = None
+        out["docs"]["total"] = total
+
+        # Best-effort latest-indexed timestamp: peek at the freshest
+        # text document via Meili sort. Skipped silently if the index
+        # has no docs or sorting fails.
+        try:
+            resp = await self._http.post(
+                f"{self.meili_url}/indexes/{Config.MEILI_INDEX}/search",
+                json={
+                    "limit": 1,
+                    "sort": ["content_modified_at:desc"],
+                    "attributesToRetrieve": ["content_modified_at"],
+                },
+                headers=self.meili_headers,
+                timeout=5,
+            )
+            hits = resp.json().get("hits") or []
+            if hits and hits[0].get("content_modified_at"):
+                out["last_index_at"] = hits[0]["content_modified_at"]
+        except Exception:  # noqa: BLE001
+            pass
+        return out
 
     # --- Health checks ---
 
