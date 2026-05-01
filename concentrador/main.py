@@ -212,6 +212,18 @@ async def get_status():
     }
 
 
+@app.get("/v1/stats", dependencies=[Depends(verify_token)])
+async def get_stats():
+    """Operator-facing index stats: doc counts + freshness.
+
+    Designed for cheap polling from admin dashboards (Atalaya's
+    /v1/akopia/instances panel reads this to populate Docs / Last sync /
+    Latency / Q (24h) columns). Independent from /health and /v1/status,
+    which focus on liveness rather than content.
+    """
+    return await index_manager.stats()
+
+
 @app.get("/v1/sources", dependencies=[Depends(verify_token)])
 async def list_sources():
     sources = await redis_client.list_sources()
